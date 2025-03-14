@@ -5,6 +5,9 @@ branding:
   icon: 'smartphone'
   color: 'green'
 inputs:
+  emulators:
+    description: 'Number of emulators to run in parallel. Ports for each emulator will be allocated starting from `emulator-port`.'
+    default: 1
   api-level:
     description: 'API level of the platform and system image - e.g. 23 for Android Marshmallow, 29 for Android 10'
     required: true

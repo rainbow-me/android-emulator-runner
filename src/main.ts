@@ -23,6 +23,7 @@ import { accessSync, constants } from 'fs';
 
 async function run() {
   let port: number = MIN_PORT;
+  const usedPorts: number[] = [];
   try {
     console.log(`::group::Configure emulator`);
     let linuxSupportKVM = false;
@@ -41,6 +42,10 @@ async function run() {
         throw new Error('Unsupported virtual machine: please use either macos or ubuntu VM.');
       }
     }
+
+    // Emulators
+    const emulators = parseInt(core.getInput('emulators', { required: true }), 10);
+    console.log(`Emulators: ${emulators}`);
 
     // API level of the platform and system image
     const apiLevel = core.getInput('api-level', { required: true });
@@ -204,28 +209,39 @@ async function run() {
       console.log(`::endgroup::`);
     }
 
-    // launch an emulator
-    await launchEmulator(
-      apiLevel,
-      target,
-      arch,
-      profile,
-      cores,
-      ramSize,
-      heapSize,
-      sdcardPathOrSize,
-      diskSize,
-      avdName,
-      forceAvdCreation,
-      emulatorBootTimeout,
-      port,
-      emulatorOptions,
-      disableAnimations,
-      disableSpellchecker,
-      disableLinuxHardwareAcceleration,
-      enableHardwareKeyboard
-    );
+    const forEachEmulator = async (handler: (port: number, index: number) => Promise<void>) => {
+      await Promise.all(
+        Array.from({ length: emulators }).map(async (_, i) => {
+          // Ports have to be even.
+          await handler(port + i * 2, i);
+        })
+      );
+    };
 
+    await forEachEmulator(async (port, index) => {
+      usedPorts.push(port);
+      // launch an emulator
+      await launchEmulator(
+        apiLevel,
+        target,
+        arch,
+        profile,
+        cores,
+        ramSize,
+        heapSize,
+        sdcardPathOrSize,
+        diskSize,
+        index > 0 ? `${avdName}-${index + 1}` : avdName,
+        forceAvdCreation,
+        emulatorBootTimeout,
+        port,
+        emulatorOptions,
+        disableAnimations,
+        disableSpellchecker,
+        disableLinuxHardwareAcceleration,
+        enableHardwareKeyboard
+      );
+    });
     // execute the custom script
     try {
       // move to custom working directory if set
@@ -243,11 +259,17 @@ async function run() {
       core.setFailed(error instanceof Error ? error.message : (error as string));
     }
 
-    // finally kill the emulator
-    await killEmulator(port);
+    // finally kill the emulators
+    await forEachEmulator(async (port) => {
+      await killEmulator(port);
+    });
   } catch (error) {
-    // kill the emulator so the action can exit
-    await killEmulator(port);
+    // kill the emulators so the action can exit
+    await Promise.all(
+      usedPorts.map(async (port) => {
+        await killEmulator(port);
+      })
+    );
     core.setFailed(error instanceof Error ? error.message : (error as string));
   }
 }
